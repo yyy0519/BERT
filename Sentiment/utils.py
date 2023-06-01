@@ -16,7 +16,7 @@ def build_dataset(config):
                 lin = line.strip()
                 if not lin:
                     continue
-                label,content= lin.split('seperate')
+                label,content = lin.split('separate')
                 token = config.tokenizer.tokenize(content)      # 分词
                 token = [CLS] + token                           # 句首加入CLS
                 seq_len = len(token)

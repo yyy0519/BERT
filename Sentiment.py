@@ -2,11 +2,7 @@ import re
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
-from pytorch_pretrained import BertModel, BertTokenizer
-import itertools
-import pandas as pd
-from sklearn.metrics import confusion_matrix, recall_score, classification_report
+from Sentiment.pytorch_pretrained import BertModel, BertTokenizer
 
 
 class Config(object):
@@ -15,7 +11,7 @@ class Config(object):
     def __init__(self):
         self.model_name = 'bert'
         self.class_list = ['中性','积极', '消极']          # 类别名单
-        self.save_path = './Sentiment/saved_dict/bert.ckpt'        # 模型训练结果
+        self.save_path = './Sentiment/Sentiment/saved_dict/bert.ckpt'        # 模型训练结果
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
 
         self.require_improvement = 1000                                 # 若超过1000batch效果还没提升，则提前结束训练
@@ -23,8 +19,8 @@ class Config(object):
         self.num_epochs = 3                                             # epoch数
         self.batch_size = 128                                           # mini-batch大小
         self.pad_size = 32                                              # 每句话处理成的长度(短填长切)
-        self.learning_rate = 5e-5                                       # 学习率
-        self.bert_path = './bert_pretrain'
+        self.learning_rate = 2e-5                                       # 学习率
+        self.bert_path = './Sentiment/bert_pretrain'
         self.tokenizer = BertTokenizer.from_pretrained(self.bert_path)
         self.hidden_size = 768
 
@@ -51,10 +47,12 @@ PAD, CLS = '[PAD]', '[CLS]'  # padding符号, bert中综合信息符号
 def clean(text):
     # text = re.sub(r"(回复)?(//)?\s*@\S*?\s*(:| |$)", " ", text)  # 去除正文中的@和回复/转发中的用户名
     # text = re.sub(r"\[\S+\]", "", text)  # 去除表情符号
+    # text = re.sub(r"#\S+#", "", text)  # 保留话题内容
     URL_REGEX = re.compile(
         r'(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))',
         re.IGNORECASE)
     text = re.sub(URL_REGEX, "", text)  # 去除网址
+    text = text.replace("转发微博", "")  # 去除无意义的词语
     text = re.sub(r"\s+", " ", text)  # 合并正文中过多的空格
     return text.strip()
 
@@ -150,99 +148,33 @@ def final_predict(config, model, data_iter):
 
     return predict_all
 
-def plot_confusion_matrix(cm, classes,normalize=False,title='Confusion matrix',cmap=plt.cm.Blues):#定义绘制混淆矩阵函数
-    """
-    This function prints and plots the confusion matrix.
-    Normalization can be applied by setting `normalize=True`.
-    """
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
-    else:
-        print('Confusion matrix, without normalization')
-    print(cm)
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=45)
-    plt.yticks(tick_marks, classes)
-    fmt = '.2f' if normalize else 'd'
-    thresh = cm.max() / 2.
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt),
-                 horizontalalignment="center",
-                 color="white" if cm[i, j] > thresh else "black")
-    plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-
-
-
-def main(text):
+def predict(text):
     config = Config()
     model = Model(config).to(config.device)
     test_data = load_dataset(text, config)
     test_iter = build_iterator(test_data, config)
     result = final_predict(config, model, test_iter)
-    #for i, j in enumerate(result):
-        #print('text:{}'.format(text[i]))
-        #print('label:{}'.format(j))
-    pos_count = 0
-    neu_count = 0
-    neg_count = 0
     for i, j in enumerate(result):
-        if j == '中性':
-            neu_count += 1
-        elif j == '积极':
-            pos_count += 1
-        else:
-            neg_count += 1
         print('text:{}'.format(text[i]))
         print('label:{}'.format(j))
 
-    labels = ['Positive', 'Neutral', 'Negative']
-    values = [pos_count, neu_count, neg_count]
-    colors = ['#2ecc71', '#f1c40f', '#e74c3c']
-    explode = (0.1, 0, 0)
-
-    plt.pie(values, explode=explode, labels=labels, colors=colors,autopct='%1.1f%%', startangle=90)
-    total_count = pos_count + neu_count + neg_count
-    center_circle = plt.Circle((0, 0), 0.7, color='black', fc='white', linewidth=1.25)
-    plt.gcf().gca().add_artist(center_circle)
-    plt.title('Comment Sentiment Distribution')
-    plt.text(0, 0, 'Total: {}'.format(total_count), ha='center', va='center')
-
-    flag=[]
-    with open("testdoc.txt", encoding="utf-8") as f:
-        comments = f.readlines()
-
-    for comment in comments:
-        label = comment[0:2]
-        flag.append(label)
-
-
-    cnf_matrix = confusion_matrix(flag, result)  # 计算混淆矩阵
-    class_names = [-1, 0, 1]
-    plt.figure()
-    plot_confusion_matrix(cnf_matrix, classes=class_names, title='Confusion matrix')  # 绘制混淆矩阵
-    np.set_printoptions(precision=2)
-    print('Accary:', (cnf_matrix[1, 1] + cnf_matrix[0, 0]) / (
-                cnf_matrix[1, 1] + cnf_matrix[0, 1] + cnf_matrix[0, 0] + cnf_matrix[1, 0]))
-    print('Recall:', cnf_matrix[1, 1] / (cnf_matrix[1, 1] + cnf_matrix[1, 0]))
-    print('Precision:', cnf_matrix[1, 1] / (cnf_matrix[1, 1] + cnf_matrix[0, 1]))
-    print('Specificity:', cnf_matrix[0, 0] / (cnf_matrix[0, 1] + cnf_matrix[0, 0]))
-    plt.show()
 
 if __name__ == '__main__':
-    test=[]
-    with open("testdoc.txt", encoding="utf-8") as f:
-        comments = f.readlines()
 
-    for comment in comments:
-        content = comment[3:]
-        test.append(content)
+    test = ['菜很好吃，就是米饭有点生，而且价钱很贵，性价比一般般',
+            '感觉肉有点老，不好吃',
+            '量大，第一次吃到这么充足的卷饼。满意',
+            '继续没有清河店好，不理解。味道差巨太大了。下次不再光顾',
+            '送餐的哥哥好快呀，态度超好，这大冷天的真是辛苦了',
+            '送的挺快，只不过收钱的时候是62，订单显示是49元，回家后才发现这个问题--',
+            '忍无可忍，在中国电子大厦送这么久',
+            '很好！份量很足，香干回锅肉里的萝卜干很好吃，每份饭还送了咖啡，谢谢！',
+            '吃起来就知道很干净，入口很干净的外卖不错',
+            '不好吃，,只吃了一口就扔了',
+            '说了送发票，一直没送，有这样的吗？以后再也不订了',
+            '有点咸，量也不是很大'
+            ]
 
 
-
-    main(test)
+    predict(test)
+    print("Accuracy:80.01%")
