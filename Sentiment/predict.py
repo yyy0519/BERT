@@ -182,6 +182,7 @@ def plot_confusion_matrix(cm, classes,normalize=False,title='Confusion matrix',c
 def main(text):
     config = Config()
     model = Model(config).to(config.device)
+    print(model)
     test_data = load_dataset(text, config)
     test_iter = build_iterator(test_data, config)
     result = final_predict(config, model, test_iter)
